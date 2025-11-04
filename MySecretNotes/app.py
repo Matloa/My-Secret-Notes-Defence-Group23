@@ -11,33 +11,41 @@ def connect_db():
 
 def init_db():
     """Initializes the database with our great SQL schema"""
-    conn = connect_db()
-    db = conn.cursor()
-    db.executescript("""
+    db = connect_db()
+    c = db.cursor()
 
-DROP TABLE IF EXISTS users;
-DROP TABLE IF EXISTS notes;
+    c.executescript("""
+                    DROP TABLE IF EXISTS users;
+                    DROP TABLE IF EXISTS notes;
 
-CREATE TABLE notes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    assocUser INTEGER NOT NULL,
-    dateWritten DATETIME NOT NULL,
-    note TEXT NOT NULL,
-    publicID INTEGER NOT NULL
-);
+                    CREATE TABLE users
+                    (
+                        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                        username TEXT NOT NULL,
+                        password BLOB NOT NULL
+                    );
+                    CREATE TABLE notes
+                    (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        assocUser   INTEGER  NOT NULL,
+                        dateWritten DATETIME NOT NULL,
+                        note        TEXT     NOT NULL,
+                        publicID    INTEGER  NOT NULL
+                    );
+                    """)
 
-CREATE TABLE users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL,
-    password TEXT NOT NULL
-);
+    c.execute("INSERT INTO users(username, password) VALUES (?, ?)",
+              ("admin", hash_password("password")))
+    c.execute("INSERT INTO users(username, password) VALUES (?, ?)",
+              ("bernardo", hash_password("omgMPC")))
 
-INSERT INTO users VALUES(null, "admin", "password");
-INSERT INTO users VALUES(null, "bernardo", "omgMPC");
-INSERT INTO notes VALUES(null, 2, "1993-09-23 10:10:10", "hello my friend", 1234567890);
-INSERT INTO notes VALUES(null, 2, "1993-09-23 12:10:10", "i want lunch pls", 1234567891);
+    c.execute("INSERT INTO notes(assocUser, dateWritten, note, publicID) VALUES (?, ?, ?, ?)",
+              (2, "1993-09-23 10:10:10", "hello my friend", 1234567890))
+    c.execute("INSERT INTO notes(assocUser, dateWritten, note, publicID) VALUES (?, ?, ?, ?)",
+              (2, "1993-09-23 12:10:10", "i want lunch pls", 1234567891))
 
-""")
+    db.commit()
+    db.close()
 
 
 ### SECURITY FUNCTIONS ###
@@ -56,9 +64,7 @@ def validate_password(password):
     return None
 
 def hash_password(password):
-    salt = bcrypt.gensalt(rounds=12)
-    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
-    return hashed
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=12))
 
 def verify_password(hashed, password):
     return bcrypt.checkpw(password.encode('utf-8'), hashed)
