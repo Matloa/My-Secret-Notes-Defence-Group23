@@ -1,4 +1,4 @@
-import json, sqlite3, click, functools, os, hashlib, time, random, sys
+import json, sqlite3, click, functools, os, hashlib, time, random, sys, re
 from flask import Flask, current_app, g, session, redirect, render_template, url_for, request
 
 
@@ -81,7 +81,7 @@ def notes():
             noteid = request.form['noteid']
             db = connect_db()
             c = db.cursor()
-            c.execute("""SELECT * from NOTES where publicID = ?""", noteid)
+            c.execute("SELECT * FROM notes WHERE publicID = ?", (noteid,))
             result = c.fetchall()
             if len(result) > 0:
                 row = result[0]
@@ -122,6 +122,19 @@ def login():
             error = "Wrong username or password!"
     return render_template('login.html', error=error)
 
+def validate_password(password):
+    if len(password) < 8:
+        return "Password must be at least 8 characters"
+    if not re.search(r"[A-Z]", password):
+        return "Password must include at least one uppercase letter"
+    if not re.search(r"[a-z]", password):
+        return "Password must include at least one lowercase letter"
+    if not re.search(r"[0-9]", password):
+        return "Password must include at least one number"
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        return "Password must include at least one special character"
+    return None
+
 
 @app.route("/register/", methods=('GET', 'POST'))
 def register():
@@ -133,14 +146,16 @@ def register():
         password = request.form['password']
         db = connect_db()
         c = db.cursor()
-        if not password or len(password) < 8:
+
+        errormsg = validate_password(password)
+        if errormsg:
             errored = True
-            passworderror = "Password must be at least 8 characters."
+            passworderror = errormsg
 
         c.execute("SELECT * FROM users WHERE username = ?", (username,))
         if len(c.fetchall()) > 0:
             errored = True
-            usererror = "Please choose a username."
+            usererror = "Please choose an other username."
 
         if not errored:
             c.execute("""INSERT INTO users(id,username,password) VALUES(null, ?, ?)""", (username, password))
