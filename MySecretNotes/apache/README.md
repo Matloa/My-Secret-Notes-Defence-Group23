@@ -33,24 +33,5 @@ cd ..
 sudo ./apache/setup-apache.sh
 sudo ./apache/setup-apache-ssl.sh --selfsigned
 
-# Or specify a custom directory
-sudo ./apache/setup-apache.sh /path/to/your/app
-sudo ./apache/setup-apache-ssl.sh --letsencrypt yourdomain.com /path/to/your/app
-```
 
 The scripts automatically detect the project directory and find the configuration files.
-
-### Manual Setup
-
-If you prefer to configure Apache manually:
-
-1. Read the documentation: `apache-setup.md` or `apache-ssl-setup.md`
-2. Copy the appropriate config file to Apache's sites-available directory
-3. Follow the step-by-step instructions in the docs
-
-## Notes
-
-- These are **template files** - the setup scripts will copy and modify them with your specific paths
-- The original files in this folder remain unchanged
-- Configuration files are deployed to `/etc/apache2/sites-available/` on the server
-

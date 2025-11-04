@@ -251,11 +251,21 @@ enable_apache_modules() {
 enable_ssl_site() {
     print_step "Enabling SSL site configuration"
     
-    # Disable old non-SSL site if it exists
-    if a2query -s "$SITE_NAME.conf" &>/dev/null; then
-        print_info "Disabling old non-SSL configuration"
+    # Disable all existing mysecretnotesapp sites to prevent conflicts
+    print_info "Checking for existing configurations..."
+    if [ -L "/etc/apache2/sites-enabled/$SITE_NAME.conf" ]; then
+        print_info "Disabling old non-SSL configuration: $SITE_NAME.conf"
         a2dissite "$SITE_NAME.conf"
     fi
+    
+    if [ -L "/etc/apache2/sites-enabled/$SITE_NAME-ssl.conf" ]; then
+        print_info "Disabling existing SSL configuration: $SITE_NAME-ssl.conf"
+        a2dissite "$SITE_NAME-ssl.conf"
+    fi
+    
+    # Reload Apache to apply site disabling
+    print_info "Reloading Apache to clear old configurations"
+    systemctl reload apache2 2>/dev/null || true
     
     # Enable SSL site
     a2ensite "$SITE_NAME-ssl.conf"
