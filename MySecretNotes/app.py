@@ -1,4 +1,4 @@
-import json, sqlite3, click, functools, os, hashlib, time, random, sys, re
+import json, sqlite3, click, functools, os, hashlib, time, random, sys, re, bcrypt
 from flask import Flask, current_app, g, session, redirect, render_template, url_for, request
 
 
@@ -38,6 +38,30 @@ INSERT INTO notes VALUES(null, 2, "1993-09-23 10:10:10", "hello my friend", 1234
 INSERT INTO notes VALUES(null, 2, "1993-09-23 12:10:10", "i want lunch pls", 1234567891);
 
 """)
+
+
+### SECURITY FUNCTIONS ###
+
+def validate_password(password):
+    if len(password) < 8:
+        return "Password must be at least 8 characters"
+    if not re.search(r"[A-Z]", password):
+        return "Password must include at least one uppercase letter"
+    if not re.search(r"[a-z]", password):
+        return "Password must include at least one lowercase letter"
+    if not re.search(r"[0-9]", password):
+        return "Password must include at least one number"
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        return "Password must include at least one special character"
+    return None
+
+def hash_password(password):
+    salt = bcrypt.gensalt(rounds=12)
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed
+
+def verify_password(hashed, password):
+    return bcrypt.checkpw(password.encode('utf-8'), hashed)
 
 
 
@@ -109,10 +133,10 @@ def login():
         password = request.form['password']
         db = connect_db()
         c = db.cursor()
-        c.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
+        c.execute("SELECT * FROM users WHERE username = ?", (username,))
         result = c.fetchall()
 
-        if len(result) > 0:
+        if len(result) > 0 and verify_password(result[0][2], password):
             session.clear()
             session['logged_in'] = True
             session['userid'] = result[0][0]
@@ -121,19 +145,6 @@ def login():
         else:
             error = "Wrong username or password!"
     return render_template('login.html', error=error)
-
-def validate_password(password):
-    if len(password) < 8:
-        return "Password must be at least 8 characters"
-    if not re.search(r"[A-Z]", password):
-        return "Password must include at least one uppercase letter"
-    if not re.search(r"[a-z]", password):
-        return "Password must include at least one lowercase letter"
-    if not re.search(r"[0-9]", password):
-        return "Password must include at least one number"
-    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
-        return "Password must include at least one special character"
-    return None
 
 
 @app.route("/register/", methods=('GET', 'POST'))
@@ -158,7 +169,8 @@ def register():
             usererror = "Please choose an other username."
 
         if not errored:
-            c.execute("""INSERT INTO users(id,username,password) VALUES(null, ?, ?)""", (username, password))
+            hashed = hash_password(password)
+            c.execute("""INSERT INTO users(id,username,password) VALUES(null, ?, ?)""", (username, hashed))
             db.commit()
             db.close()
             return f"""<html>
