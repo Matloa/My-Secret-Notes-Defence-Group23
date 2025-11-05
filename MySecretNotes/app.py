@@ -1,5 +1,7 @@
 import json, sqlite3, click, functools, os, hashlib,time, random, sys
 from flask import Flask, current_app, g, session, redirect, render_template, url_for, request
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 
 
@@ -46,6 +48,14 @@ app = Flask(__name__)
 app.database = "db.sqlite3"
 app.secret_key = os.urandom(32)
 
+# Setup rate limiting
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["500 per day", "100 per hour"],
+    storage_uri="memory://"
+)
+
 ### ADMINISTRATOR'S PANEL ###
 def login_required(view):
     @functools.wraps(view)
@@ -65,6 +75,7 @@ def index():
 
 @app.route("/notes/", methods=('GET', 'POST'))
 @login_required
+@limiter.limit("30 per minute")
 def notes():
     importerror=""
     #Posting a new note:
@@ -106,6 +117,7 @@ def notes():
 
 
 @app.route("/login/", methods=('GET', 'POST'))
+@limiter.limit("5 per minute")
 def login():
     error = ""
     if request.method == 'POST':
@@ -129,6 +141,7 @@ def login():
 
 
 @app.route("/register/", methods=('GET', 'POST'))
+@limiter.limit("3 per minute")
 def register():
     errored = False
     usererror = ""
