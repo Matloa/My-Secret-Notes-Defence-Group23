@@ -47,6 +47,9 @@ INSERT INTO notes VALUES(null,2,"1993-09-23 12:10:10","i want lunch pls",1234567
 app = Flask(__name__)
 app.database = "db.sqlite3"
 app.secret_key = os.urandom(32)
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # Setup rate limiting
 limiter = Limiter(
