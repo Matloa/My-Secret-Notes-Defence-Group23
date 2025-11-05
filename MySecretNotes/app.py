@@ -1,6 +1,7 @@
 import json, sqlite3, click, functools, os, hashlib, time, random, sys, re, bcrypt
 from flask import Flask, current_app, g, session, redirect, render_template, url_for, request
 from flask_wtf import CSRFProtect
+from markupsafe import escape
 
 
 
@@ -103,7 +104,7 @@ def notes():
     # Posting a new note:
     if request.method == 'POST':
         if request.form['submit_button'] == 'add note':
-            note = request.form['noteinput']
+            note = escape(request.form['noteinput'])
             db = connect_db()
             c = db.cursor()
             c.execute("""INSERT INTO notes(id,assocUser,dateWritten,note,publicID) VALUES(null,?,?,?,?)""", (

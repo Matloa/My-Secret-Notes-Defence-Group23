@@ -262,7 +262,7 @@ ol, ul, dl {
         <a href="/logout/" class="notes__logout btn-solid-lg">Logout</a>
         <article class="notes__background-title-container">
           <h1 class="notes__title">Welcome</h1>
-          <h2 class="notes__title-user">{{session['username']}}</h2>
+          <h2 class="notes__title-user">{{session['username'] | e }}</h2>
         </article>
       </section>
       <section class="notes__body-content notes__body-top-padding">
