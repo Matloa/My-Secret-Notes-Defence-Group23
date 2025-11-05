@@ -1,7 +1,12 @@
-import json, sqlite3, click, functools, os, hashlib,time, random, sys
+import json, sqlite3, click, functools, os, hashlib, time, random, sys, re, bcrypt
 from flask import Flask, current_app, g, session, redirect, render_template, url_for, request
+
+from flask_wtf import CSRFProtect
+from markupsafe import escape
+
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+
 
 
 
@@ -13,33 +18,64 @@ def connect_db():
 
 def init_db():
     """Initializes the database with our great SQL schema"""
-    conn = connect_db()
-    db = conn.cursor()
-    db.executescript("""
+    db = connect_db()
+    c = db.cursor()
 
-DROP TABLE IF EXISTS users;
-DROP TABLE IF EXISTS notes;
+    c.executescript("""
+                    DROP TABLE IF EXISTS users;
+                    DROP TABLE IF EXISTS notes;
 
-CREATE TABLE notes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    assocUser INTEGER NOT NULL,
-    dateWritten DATETIME NOT NULL,
-    note TEXT NOT NULL,
-    publicID INTEGER NOT NULL
-);
+                    CREATE TABLE users
+                    (
+                        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                        username TEXT NOT NULL,
+                        password BLOB NOT NULL
+                    );
+                    CREATE TABLE notes
+                    (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        assocUser   INTEGER  NOT NULL,
+                        dateWritten DATETIME NOT NULL,
+                        note        TEXT     NOT NULL,
+                        publicID    INTEGER  NOT NULL
+                    );
+                    """)
 
-CREATE TABLE users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL,
-    password TEXT NOT NULL
-);
+    # TODO: change to safer passwords (but for testing reason leaving it)
+    c.execute("INSERT INTO users(username, password) VALUES (?, ?)",
+              ("admin", hash_password("password")))
+    c.execute("INSERT INTO users(username, password) VALUES (?, ?)",
+              ("bernardo", hash_password("omgMPC")))
 
-INSERT INTO users VALUES(null,"admin", "password");
-INSERT INTO users VALUES(null,"bernardo", "omgMPC");
-INSERT INTO notes VALUES(null,2,"1993-09-23 10:10:10","hello my friend",1234567890);
-INSERT INTO notes VALUES(null,2,"1993-09-23 12:10:10","i want lunch pls",1234567891);
+    c.execute("INSERT INTO notes(assocUser, dateWritten, note, publicID) VALUES (?, ?, ?, ?)",
+              (2, "1993-09-23 10:10:10", "hello my friend", 1234567890))
+    c.execute("INSERT INTO notes(assocUser, dateWritten, note, publicID) VALUES (?, ?, ?, ?)",
+              (2, "1993-09-23 12:10:10", "i want lunch pls", 1234567891))
 
-""")
+    db.commit()
+    db.close()
+
+
+### SECURITY FUNCTIONS ###
+
+def validate_password(password):
+    if len(password) < 8:
+        return "Password must be at least 8 characters"
+    if not re.search(r"[A-Z]", password):
+        return "Password must include at least one uppercase letter"
+    if not re.search(r"[a-z]", password):
+        return "Password must include at least one lowercase letter"
+    if not re.search(r"[0-9]", password):
+        return "Password must include at least one number"
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        return "Password must include at least one special character"
+    return None
+
+def hash_password(password):
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=12))
+
+def verify_password(hashed, password):
+    return bcrypt.checkpw(password.encode('utf-8'), hashed)
 
 
 
@@ -47,6 +83,7 @@ INSERT INTO notes VALUES(null,2,"1993-09-23 12:10:10","i want lunch pls",1234567
 app = Flask(__name__)
 app.database = "db.sqlite3"
 app.secret_key = os.urandom(32)
+csrf = CSRFProtect(app)
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -80,43 +117,76 @@ def index():
 @login_required
 @limiter.limit("30 per minute")
 def notes():
-    importerror=""
-    #Posting a new note:
+    importerror = ""
+    MAX_NOTE_LENGTH = 500
     if request.method == 'POST':
-        if request.form['submit_button'] == 'add note':
-            note = request.form['noteinput']
-            db = connect_db()
-            c = db.cursor()
-            statement = """INSERT INTO notes(id,assocUser,dateWritten,note,publicID) VALUES(null,%s,'%s','%s',%s);""" %(session['userid'],time.strftime('%Y-%m-%d %H:%M:%S'),note,random.randrange(1000000000, 9999999999))
-            print(statement)
-            c.execute(statement)
-            db.commit()
-            db.close()
-        elif request.form['submit_button'] == 'import note':
-            noteid = request.form['noteid']
-            db = connect_db()
-            c = db.cursor()
-            statement = """SELECT * from NOTES where publicID = %s""" %noteid
-            c.execute(statement)
-            result = c.fetchall()
-            if(len(result)>0):
-                row = result[0]
-                statement = """INSERT INTO notes(id,assocUser,dateWritten,note,publicID) VALUES(null,%s,'%s','%s',%s);""" %(session['userid'],row[2],row[3],row[4])
-                c.execute(statement)
+        submit_button = request.form.get('submit_button') # Use .get() to avoid KeyError
+
+        if submit_button == 'add note':
+            note_input = request.form.get('noteinput', '').strip()
+            if not note_input:
+                # empty input
+                importerror = "Note cannot be empty."
+            elif len(note_input) > MAX_NOTE_LENGTH:
+                # overly long input
+                importerror = f"Note is too long. Max length is {MAX_NOTE_LENGTH} characters."
             else:
-                importerror="No such note with that ID!"
-            db.commit()
+                note_data = note_input 
+                try:
+                    db = connect_db()
+                    c = db.cursor()
+                    c.execute("""INSERT INTO notes(id,assocUser,dateWritten,note,publicID) VALUES(null,?,?,?,?)""", (
+                        session['userid'], time.strftime('%Y-%m-%d %H:%M:%S'), note_data, random.randrange(1000000000, 9999999999)))
+                    db.commit()
+                except Exception as e:
+                    # potential db error
+                    importerror = "An error occurred while saving the note."
+                finally:
+                    if 'db' in locals():
+                        db.close()
+
+        elif submit_button == 'import note':
+            noteid_input = request.form.get('noteid', '').strip()
+            
+            # checking if the input is a 10-digit number 
+            if not re.fullmatch(r'^\d{10}$', noteid_input):
+                importerror = "Invalid Note ID format. It must be a 10-digit number."
+            else:
+                noteid = noteid_input
+                try:
+                    db = connect_db()
+                    c = db.cursor()
+                    c.execute("SELECT * FROM notes WHERE publicID = ?", (noteid,))
+                    result = c.fetchall()
+                    
+                    if len(result) > 0:
+                        row = result[0]
+                        c.execute("""INSERT INTO notes(id,assocUser,dateWritten,note,publicID) VALUES(null, ?, ?, ?, ?)""", (
+                            session['userid'], row[2], row[3], row[4]))
+                        importerror = "Note imported successfully!"
+                    else:
+                        importerror = "No such note with that ID!"
+                    
+                    db.commit()
+                except Exception as e:
+                    importerror = "An error occurred during note import."
+                finally:
+                    if 'db' in locals():
+                        db.close()
+
+    
+    notes = []
+    try:
+        db = connect_db()
+        c = db.cursor()
+        c.execute("SELECT * FROM notes WHERE assocUser = ?", (session['userid'],))
+        notes = c.fetchall()
+    except Exception as e:
+        pass 
+    finally:
+        if 'db' in locals():
             db.close()
-    
-    db = connect_db()
-    c = db.cursor()
-    statement = "SELECT * FROM notes WHERE assocUser = %s;" %session['userid']
-    print(statement)
-    c.execute(statement)
-    notes = c.fetchall()
-    print(notes)
-    
-    return render_template('notes.html',notes=notes,importerror=importerror)
+    return render_template('notes.html', notes=notes, importerror=importerror)
 
 
 @app.route("/login/", methods=('GET', 'POST'))
@@ -128,19 +198,18 @@ def login():
         password = request.form['password']
         db = connect_db()
         c = db.cursor()
-        statement = "SELECT * FROM users WHERE username = '%s' AND password = '%s';" %(username, password)
-        c.execute(statement)
+        c.execute("SELECT * FROM users WHERE username = ?", (username,))
         result = c.fetchall()
 
-        if len(result) > 0:
+        if len(result) > 0 and verify_password(result[0][2], password):
             session.clear()
             session['logged_in'] = True
             session['userid'] = result[0][0]
-            session['username']=result[0][1]
+            session['username'] = result[0][1]
             return redirect(url_for('index'))
         else:
             error = "Wrong username or password!"
-    return render_template('login.html',error=error)
+    return render_template('login.html', error=error)
 
 
 @app.route("/register/", methods=('GET', 'POST'))
@@ -150,28 +219,24 @@ def register():
     usererror = ""
     passworderror = ""
     if request.method == 'POST':
-        
-
         username = request.form['username']
         password = request.form['password']
         db = connect_db()
         c = db.cursor()
-        pass_statement = """SELECT * FROM users WHERE password = '%s';""" %password
-        user_statement = """SELECT * FROM users WHERE username = '%s';""" %username
-        c.execute(pass_statement)
-        if(len(c.fetchall())>0):
-            errored = True
-            passworderror = "That password is already in use by someone else!"
 
-        c.execute(user_statement)
-        if(len(c.fetchall())>0):
+        errormsg = validate_password(password)
+        if errormsg:
             errored = True
-            usererror = "That username is already in use by someone else!"
+            passworderror = errormsg
 
-        if(not errored):
-            statement = """INSERT INTO users(id,username,password) VALUES(null,'%s','%s');""" %(username,password)
-            print(statement)
-            c.execute(statement)
+        c.execute("SELECT * FROM users WHERE username = ?", (username,))
+        if len(c.fetchall()) > 0:
+            errored = True
+            usererror = "Please choose an other username."
+
+        if not errored:
+            hashed = hash_password(password)
+            c.execute("""INSERT INTO users(id,username,password) VALUES(null, ?, ?)""", (username, hashed))
             db.commit()
             db.close()
             return f"""<html>
@@ -183,10 +248,10 @@ def register():
                         </body>
                         </html>
                         """
-        
+
         db.commit()
         db.close()
-    return render_template('register.html',usererror=usererror,passworderror=passworderror)
+    return render_template('register.html', usererror=usererror, passworderror=passworderror)
 
 
 @app.route("/logout/")
@@ -197,14 +262,14 @@ def logout():
     return redirect(url_for('index'))
 
 if __name__ == "__main__":
-    #create database if it doesn't exist yet
+    # create database if it doesn't exist yet
     if not os.path.exists(app.database):
         init_db()
     runport = 5000
-    if(len(sys.argv)==2):
+    if len(sys.argv) == 2:
         runport = sys.argv[1]
     try:
-        app.run(host='0.0.0.0', port=runport) # runs on machine ip address to make it visible on netowrk
+        app.run(host='0.0.0.0', port=runport)  # runs on machine ip address to make it visible on network
     except:
         print("Something went wrong. the usage of the server is either")
         print("'python3 app.py' (to start on port 5000)")

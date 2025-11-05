@@ -262,7 +262,7 @@ ol, ul, dl {
         <a href="/logout/" class="notes__logout btn-solid-lg">Logout</a>
         <article class="notes__background-title-container">
           <h1 class="notes__title">Welcome</h1>
-          <h2 class="notes__title-user">{{session['username']}}</h2>
+          <h2 class="notes__title-user">{{session['username'] | e }}</h2>
         </article>
       </section>
       <section class="notes__body-content notes__body-top-padding">
@@ -276,6 +276,7 @@ ol, ul, dl {
       <section class="notes__body-content notes__body-bottom-padding">
         <div class="notes__body-top-border"></div>
         <form action="" method="post" class="notes__input-wrapper">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="notes__input-container">
               <label for="note">New note:</label>
               <textarea name="noteinput" placeholder=">Enter text here..." class="textfield form-control" value={{ request.form.noteinput }}></textarea><br>
@@ -284,6 +285,7 @@ ol, ul, dl {
         </form> 
         
         <form action="" method="post" class="notes__input-wrapper">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="notes__input-container">
               <label for="note">Import a note from someone else:</label>
               <input class="form-control notes__input__no-margin" type="text" placeholder="XXXXXXXXXX" name="noteid" value={{request.form.noteid}}>
