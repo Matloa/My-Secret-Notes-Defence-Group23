@@ -101,36 +101,74 @@ def index():
 @login_required
 def notes():
     importerror = ""
-    # Posting a new note:
+    MAX_NOTE_LENGTH = 500
     if request.method == 'POST':
-        if request.form['submit_button'] == 'add note':
-            note = escape(request.form['noteinput'])
-            db = connect_db()
-            c = db.cursor()
-            c.execute("""INSERT INTO notes(id,assocUser,dateWritten,note,publicID) VALUES(null,?,?,?,?)""", (
-                session['userid'], time.strftime('%Y-%m-%d %H:%M:%S'), note, random.randrange(1000000000, 9999999999)))
-            db.commit()
-            db.close()
-        elif request.form['submit_button'] == 'import note':
-            noteid = request.form['noteid']
-            db = connect_db()
-            c = db.cursor()
-            c.execute("SELECT * FROM notes WHERE publicID = ?", (noteid,))
-            result = c.fetchall()
-            if len(result) > 0:
-                row = result[0]
-                c.execute("""INSERT INTO notes(id,assocUser,dateWritten,note,publicID) VALUES(null, ?, ?, ?, ?)""", (
-                    session['userid'], row[2], row[3], row[4]))
+        submit_button = request.form.get('submit_button') # Use .get() to avoid KeyError
+
+        if submit_button == 'add note':
+            note_input = request.form.get('noteinput', '').strip()
+            if not note_input:
+                # empty input
+                importerror = "Note cannot be empty."
+            elif len(note_input) > MAX_NOTE_LENGTH:
+                # overly long input
+                importerror = f"Note is too long. Max length is {MAX_NOTE_LENGTH} characters."
             else:
-                importerror = "No such note with that ID!"
-            db.commit()
+                note_data = note_input 
+                try:
+                    db = connect_db()
+                    c = db.cursor()
+                    c.execute("""INSERT INTO notes(id,assocUser,dateWritten,note,publicID) VALUES(null,?,?,?,?)""", (
+                        session['userid'], time.strftime('%Y-%m-%d %H:%M:%S'), note_data, random.randrange(1000000000, 9999999999)))
+                    db.commit()
+                except Exception as e:
+                    # potential db error
+                    importerror = "An error occurred while saving the note."
+                finally:
+                    if 'db' in locals():
+                        db.close()
+
+        elif submit_button == 'import note':
+            noteid_input = request.form.get('noteid', '').strip()
+            
+            # checking if the input is a 10-digit number 
+            if not re.fullmatch(r'^\d{10}$', noteid_input):
+                importerror = "Invalid Note ID format. It must be a 10-digit number."
+            else:
+                noteid = noteid_input
+                try:
+                    db = connect_db()
+                    c = db.cursor()
+                    c.execute("SELECT * FROM notes WHERE publicID = ?", (noteid,))
+                    result = c.fetchall()
+                    
+                    if len(result) > 0:
+                        row = result[0]
+                        c.execute("""INSERT INTO notes(id,assocUser,dateWritten,note,publicID) VALUES(null, ?, ?, ?, ?)""", (
+                            session['userid'], row[2], row[3], row[4]))
+                        importerror = "Note imported successfully!"
+                    else:
+                        importerror = "No such note with that ID!"
+                    
+                    db.commit()
+                except Exception as e:
+                    importerror = "An error occurred during note import."
+                finally:
+                    if 'db' in locals():
+                        db.close()
+
+    
+    notes = []
+    try:
+        db = connect_db()
+        c = db.cursor()
+        c.execute("SELECT * FROM notes WHERE assocUser = ?", (session['userid'],))
+        notes = c.fetchall()
+    except Exception as e:
+        pass 
+    finally:
+        if 'db' in locals():
             db.close()
-
-    db = connect_db()
-    c = db.cursor()
-    c.execute("SELECT * FROM notes WHERE assocUser = ?", (session['userid'],))
-    notes = c.fetchall()
-
     return render_template('notes.html', notes=notes, importerror=importerror)
 
 
