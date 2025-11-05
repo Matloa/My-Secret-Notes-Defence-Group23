@@ -1,5 +1,6 @@
 import json, sqlite3, click, functools, os, hashlib, time, random, sys, re, bcrypt
 from flask import Flask, current_app, g, session, redirect, render_template, url_for, request
+from flask_wtf import CSRFProtect
 
 
 
@@ -34,6 +35,7 @@ def init_db():
                     );
                     """)
 
+    # TODO: change to safer passwords (but for testing reason leaving it)
     c.execute("INSERT INTO users(username, password) VALUES (?, ?)",
               ("admin", hash_password("password")))
     c.execute("INSERT INTO users(username, password) VALUES (?, ?)",
@@ -75,6 +77,7 @@ def verify_password(hashed, password):
 app = Flask(__name__)
 app.database = "db.sqlite3"
 app.secret_key = os.urandom(32)
+csrf = CSRFProtect(app)
 
 ### ADMINISTRATOR'S PANEL ###
 def login_required(view):
@@ -126,7 +129,6 @@ def notes():
     c = db.cursor()
     c.execute("SELECT * FROM notes WHERE assocUser = ?", (session['userid'],))
     notes = c.fetchall()
-    print(notes)
 
     return render_template('notes.html', notes=notes, importerror=importerror)
 
