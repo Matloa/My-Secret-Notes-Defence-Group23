@@ -1,7 +1,12 @@
 import json, sqlite3, click, functools, os, hashlib, time, random, sys, re, bcrypt
 from flask import Flask, current_app, g, session, redirect, render_template, url_for, request
+
 from flask_wtf import CSRFProtect
 from markupsafe import escape
+
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
 
 
 
@@ -79,6 +84,17 @@ app = Flask(__name__)
 app.database = "db.sqlite3"
 app.secret_key = os.urandom(32)
 csrf = CSRFProtect(app)
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+# Setup rate limiting
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["500 per day", "100 per hour"],
+    storage_uri="memory://"
+)
 
 ### ADMINISTRATOR'S PANEL ###
 def login_required(view):
@@ -99,6 +115,7 @@ def index():
 
 @app.route("/notes/", methods=('GET', 'POST'))
 @login_required
+@limiter.limit("30 per minute")
 def notes():
     importerror = ""
     MAX_NOTE_LENGTH = 500
@@ -173,6 +190,7 @@ def notes():
 
 
 @app.route("/login/", methods=('GET', 'POST'))
+@limiter.limit("5 per minute")
 def login():
     error = ""
     if request.method == 'POST':
@@ -195,6 +213,7 @@ def login():
 
 
 @app.route("/register/", methods=('GET', 'POST'))
+@limiter.limit("3 per minute")
 def register():
     errored = False
     usererror = ""
