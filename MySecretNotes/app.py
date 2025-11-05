@@ -47,8 +47,6 @@ INSERT INTO notes VALUES(null,2,"1993-09-23 12:10:10","i want lunch pls",1234567
 app = Flask(__name__)
 app.database = "db.sqlite3"
 app.secret_key = os.urandom(32)
-
-# Insecure cookie problem
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -89,26 +87,22 @@ def notes():
             note = request.form['noteinput']
             db = connect_db()
             c = db.cursor()
-            note = request.form['noteinput']
-            # ADA 
-            date = time.strftime('%Y-%m-%d %H:%M:%S')
-            public_id = random.randrange(1000000000, 9999999999)
-            statement = """INSERT INTO notes(assocUser,dateWritten,note,publicID) VALUES(?,?,?,?);""" 
-            c.execute(statement, (session['userid'], date, note, public_id))
+            statement = """INSERT INTO notes(id,assocUser,dateWritten,note,publicID) VALUES(null,%s,'%s','%s',%s);""" %(session['userid'],time.strftime('%Y-%m-%d %H:%M:%S'),note,random.randrange(1000000000, 9999999999))
+            print(statement)
+            c.execute(statement)
             db.commit()
             db.close()
         elif request.form['submit_button'] == 'import note':
             noteid = request.form['noteid']
             db = connect_db()
             c = db.cursor()
-            noteid = request.form['noteid']
-            statement = """SELECT * from NOTES where publicID = ?"""
-            c.execute(statement, (noteid,))
+            statement = """SELECT * from NOTES where publicID = %s""" %noteid
+            c.execute(statement)
             result = c.fetchall()
             if(len(result)>0):
                 row = result[0]
-                statement = """INSERT INTO notes(assocUser,dateWritten,note,publicID) VALUES(?,?,?,?);"""
-                c.execute(statement, (session['userid'], row[2], row[3], row[4]))
+                statement = """INSERT INTO notes(id,assocUser,dateWritten,note,publicID) VALUES(null,%s,'%s','%s',%s);""" %(session['userid'],row[2],row[3],row[4])
+                c.execute(statement)
             else:
                 importerror="No such note with that ID!"
             db.commit()
@@ -116,8 +110,9 @@ def notes():
     
     db = connect_db()
     c = db.cursor()
-    statement = "SELECT * FROM notes WHERE assocUser = ?;"
-    c.execute(statement, (session['userid'],))
+    statement = "SELECT * FROM notes WHERE assocUser = %s;" %session['userid']
+    print(statement)
+    c.execute(statement)
     notes = c.fetchall()
     print(notes)
     
