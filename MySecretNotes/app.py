@@ -161,9 +161,14 @@ def notes():
                     
                     if len(result) > 0:
                         row = result[0]
-                        c.execute("""INSERT INTO notes(id,assocUser,dateWritten,note,publicID) VALUES(null, ?, ?, ?, ?)""", (
-                            session['userid'], row[2], row[3], row[4]))
-                        importerror = "Note imported successfully!"
+                        imported_note_content = row[3]
+                        if len(imported_note_content) > MAX_NOTE_LENGTH:
+                            importerror = f"Imported note is too long. Max length is {MAX_NOTE_LENGTH} characters."
+                        else:
+                            c.execute("""INSERT INTO notes(id,assocUser,dateWritten,note,publicID) VALUES(null, ?, ?, ?, ?)""", (
+                                session['userid'], row[2], row[3], row[4]))
+                        
+                            importerror = "Note imported successfully!"
                     else:
                         importerror = "No such note with that ID!"
                     
@@ -182,7 +187,7 @@ def notes():
         c.execute("SELECT * FROM notes WHERE assocUser = ?", (session['userid'],))
         notes = c.fetchall()
     except Exception as e:
-        pass 
+        importerror = "Could not retrieve notes due to a server error."
     finally:
         if 'db' in locals():
             db.close()
