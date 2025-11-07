@@ -12,12 +12,16 @@ if you can find all the injection points. I can promise you that you are able to
 ### Installation
 You will need python 3 and flask. To install do: 
 ```sh 
+$ pip install -r verion.txt 
 $ scp -r MySecretNotes stud@studXX.itu.dk:~
 $ ssh studXX.itu.dk -l stud
 $ sudo apt-get install python3-flask 
 $ cd MySecretNotes
 $ python3 app.py 
 ``` 
+
+ pip install -r verion.txt 
+ This line is to keep all dependencies updated
 
 The project should run on port 5000 
 ### Credits

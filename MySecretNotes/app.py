@@ -1,14 +1,10 @@
-import json, sqlite3, click, functools, os, hashlib, time, random, sys, re, bcrypt
+import json, sqlite3, click, functools, os, hashlib, time, sys, re, bcrypt, secrets
 from flask import Flask, current_app, g, session, redirect, render_template, url_for, request
-
 from flask_wtf import CSRFProtect
 from markupsafe import escape
 
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-
-
-
 
 
 ### DATABASE FUNCTIONS ###
@@ -105,6 +101,12 @@ def login_required(view):
         return view(**kwargs)
     return wrapped_view
 
+@app.after_request
+def set_security_headers(response):
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Content-Security-Policy'] = "frame-ancestors 'none';"
+    return response
+
 @app.route("/")
 def index():
     if not session.get('logged_in'):
@@ -136,7 +138,7 @@ def notes():
                     db = connect_db()
                     c = db.cursor()
                     c.execute("""INSERT INTO notes(id,assocUser,dateWritten,note,publicID) VALUES(null,?,?,?,?)""", (
-                        session['userid'], time.strftime('%Y-%m-%d %H:%M:%S'), note_data, random.randrange(1000000000, 9999999999)))
+                        session['userid'], time.strftime('%Y-%m-%d %H:%M:%S'), note_data, secrets.randbelow(10**10)))
                     db.commit()
                 except Exception as e:
                     # potential db error
