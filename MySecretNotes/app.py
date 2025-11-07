@@ -1,14 +1,11 @@
-import json, sqlite3, click, functools, os, hashlib, time, random, sys, re, bcrypt
+import base64
+import json, sqlite3, click, functools, os, hashlib, time, random, sys, re, bcrypt, pyotp, qrcode, io
 from flask import Flask, current_app, g, session, redirect, render_template, url_for, request
-
 from flask_wtf import CSRFProtect
 from markupsafe import escape
 
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-
-
-
 
 
 ### DATABASE FUNCTIONS ###
@@ -29,7 +26,8 @@ def init_db():
                     (
                         id       INTEGER PRIMARY KEY AUTOINCREMENT,
                         username TEXT NOT NULL,
-                        password BLOB NOT NULL
+                        password BLOB NOT NULL,
+                        otpSecret TEXT
                     );
                     CREATE TABLE notes
                     (
@@ -59,8 +57,8 @@ def init_db():
 ### SECURITY FUNCTIONS ###
 
 def validate_password(password):
-    if len(password) < 8:
-        return "Password must be at least 8 characters"
+    if len(password) < 13:
+        return "Password must be at least 13 characters"
     if not re.search(r"[A-Z]", password):
         return "Password must include at least one uppercase letter"
     if not re.search(r"[a-z]", password):
@@ -77,6 +75,12 @@ def hash_password(password):
 def verify_password(hashed, password):
     return bcrypt.checkpw(password.encode('utf-8'), hashed)
 
+def generate_otp_secret():
+    return pyotp.random_base32()
+
+def verify_otp_secret(otp, token):
+    totp = pyotp.TOTP(otp)
+    return totp.verify(token)
 
 
 ### APPLICATION SETUP ###
@@ -201,17 +205,25 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
+        otp = request.form['otp']
         db = connect_db()
         c = db.cursor()
         c.execute("SELECT * FROM users WHERE username = ?", (username,))
         result = c.fetchall()
+        db.close()
 
         if len(result) > 0 and verify_password(result[0][2], password):
-            session.clear()
-            session['logged_in'] = True
-            session['userid'] = result[0][0]
-            session['username'] = result[0][1]
-            return redirect(url_for('index'))
+            otp_secret = result[0][3]
+            if not otp_secret:
+                error = "2FA not configured for this account."
+            elif not verify_otp_secret(otp_secret, otp):
+                error = "Invalid 2FA code."
+            else:
+                session.clear()
+                session['logged_in'] = True
+                session['userid'] = result[0][0]
+                session['username'] = result[0][1]
+                return redirect(url_for('index'))
         else:
             error = "Wrong username or password!"
     return render_template('login.html', error=error)
@@ -223,6 +235,8 @@ def register():
     errored = False
     usererror = ""
     passworderror = ""
+    qr_data = None
+
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
@@ -237,27 +251,50 @@ def register():
         c.execute("SELECT * FROM users WHERE username = ?", (username,))
         if len(c.fetchall()) > 0:
             errored = True
-            usererror = "Please choose an other username."
+            usererror = "Please choose another username."
 
         if not errored:
-            hashed = hash_password(password)
-            c.execute("""INSERT INTO users(id,username,password) VALUES(null, ?, ?)""", (username, hashed))
-            db.commit()
-            db.close()
-            return f"""<html>
-                        <head>
-                            <meta http-equiv="refresh" content="2;url=/" />
-                        </head>
-                        <body>
-                            <h1>SUCCESS!!! Redirecting in 2 seconds...</h1>
-                        </body>
-                        </html>
-                        """
+            otp_secret = pyotp.random_base32()
+            otp_uri = pyotp.totp.TOTP(otp_secret).provisioning_uri(name=username, issuer_name="SecureNotesApp")
+            buf = io.BytesIO()
+            qrcode.make(otp_uri).save(buf, format='PNG')
+            qr_data = base64.b64encode(buf.getvalue()).decode('utf-8')
 
+            session['pending_username'] = username
+            session['pending_password'] = hash_password(password)
+            session['pending_otp_secret'] = otp_secret
+
+            db.close()
+
+            return render_template('register.html', show_qr=True, qr_data=qr_data, usererror=usererror, passworderror=passworderror)
+
+        db.close()
+
+    return render_template('register.html', show_qr=False, usererror=usererror, passworderror=passworderror)
+
+@app.route("/verify_2fa/", methods=('POST',))
+def verify_2fa():
+    code = request.form.get('otp_code')
+    otp_secret = session.get('pending_otp_secret')
+    username = session.get('pending_username')
+    hashed_password = session.get('pending_password')
+
+    if not (otp_secret and username and hashed_password):
+        return redirect(url_for('register'))
+
+    totp = pyotp.TOTP(otp_secret)
+    if totp.verify(code):
+        db = connect_db()
+        c = db.cursor()
+        c.execute("INSERT INTO users(id, username, password, otpSecret) VALUES (null, ?, ?, ?)",
+                  (username, hashed_password, otp_secret))
         db.commit()
         db.close()
-    return render_template('register.html', usererror=usererror, passworderror=passworderror)
 
+        session.clear()
+        return redirect(url_for('login'))
+    else:
+        return render_template('register.html', show_qr=True, qr_data=None, otp_error="Invalid 2FA code.")
 
 @app.route("/logout/")
 @login_required
