@@ -55,8 +55,8 @@ def init_db():
 ### SECURITY FUNCTIONS ###
 
 def validate_password(password):
-    if len(password) < 8:
-        return "Password must be at least 8 characters"
+    if len(password) < 13:
+        return "Password must be at least 13 characters"
     if not re.search(r"[A-Z]", password):
         return "Password must include at least one uppercase letter"
     if not re.search(r"[a-z]", password):
